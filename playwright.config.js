@@ -1,32 +1,35 @@
-import { defineConfig, devices } from "@playwright/test"
+import { defineConfig, devices } from "@playwright/test";
 
-// Source: <https://developer.chrome.com/blog/supercharge-web-ai-testing>
+// Chromium GPU flags for Linux
 const chromiumGpuOnLinuxFlags = [
-  "--use-angle=vulkan",
-  "--enable-features=Vulkan",
-  "--disable-vulkan-surface",
-  "--enable-unsafe-webgpu",
-]
+  "--use-angle=vulkan",                  // ANGLE Vulkan backend
+  "--enable-features=WebGPU,Vulkan",    // Enable WebGPU and Vulkan explicitly
+  "--disable-vulkan-surface",           // Disable Vulkan surface fallback
+  "--enable-unsafe-webgpu",             // Allow experimental WebGPU features
+  "--ignore-gpu-blocklist",             // Ignore Chromium GPU blacklist
+  "--disable-gpu-driver-bug-workarounds", // Prevent software fallback
+];
 
 export default defineConfig({
-  // other irrelevant settings omitted
-	use: {
-		trace: "retain-on-failure"
-	},
+  use: {
+    trace: "retain-on-failure",
+  },
   projects: [
     {
       name: "chromium",
       use: {
         ...devices["Desktop Chrome"],
-        // To enable the new headless mode; see <https://github.com/microsoft/playwright/releases/tag/v1.49.0>
-        channel: "chromium",
+
+        channel: "chrome",  // Use Playwright bundled Chromium
+
         launchOptions: {
+          headless: true,
           args: [
-            "--no-sandbox",
+            "--headless=new",  // modern headless mode for GPU
             ...(process.platform === "linux" ? chromiumGpuOnLinuxFlags : []),
           ],
         },
       },
     },
   ],
-})
+});
