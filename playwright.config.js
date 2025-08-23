@@ -1,14 +1,51 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// Chromium GPU flags for Linux
-const chromiumGpuOnLinuxFlags = [
-  "--use-angle=vulkan",                  // ANGLE Vulkan backend
-  "--enable-features=WebGPU,Vulkan",    // Enable WebGPU and Vulkan explicitly
-  "--disable-vulkan-surface",           // Disable Vulkan surface fallback
-  "--enable-unsafe-webgpu",             // Allow experimental WebGPU features
-  "--ignore-gpu-blocklist",             // Ignore Chromium GPU blacklist
-  "--disable-gpu-driver-bug-workarounds", // Prevent software fallback
+// Linux-specific WebGPU flags
+const linuxWebGPUFlags = [
+  "--use-angle=vulkan",
+  "--enable-features=WebGPU,Vulkan",
+  "--disable-vulkan-surface",
+  "--enable-unsafe-webgpu",
+  "--ignore-gpu-blocklist",
+  "--disable-gpu-driver-bug-workarounds",
 ];
+
+// macOS-specific WebGPU flags
+const macWebGPUFlags = [
+  "--use-angle=metal",                    // Use Metal backend on macOS
+  "--enable-features=WebGPU",             // Enable WebGPU (no Vulkan on macOS)
+  "--enable-unsafe-webgpu",               // Allow experimental WebGPU
+  "--ignore-gpu-blocklist",               // Ignore GPU blacklist
+  "--disable-gpu-driver-bug-workarounds", // Prevent software fallback
+  "--enable-gpu",                         // Ensure GPU acceleration
+];
+
+// Windows-specific WebGPU flags (if needed)
+const windowsWebGPUFlags = [
+  "--use-angle=d3d11",                    // DirectX backend
+  "--enable-features=WebGPU",
+  "--enable-unsafe-webgpu",
+  "--ignore-gpu-blocklist",
+  "--disable-gpu-driver-bug-workarounds",
+];
+
+// Get platform-specific flags
+function getPlatformWebGPUFlags() {
+  switch (process.platform) {
+    case "linux":
+      return linuxWebGPUFlags;
+    case "darwin": // macOS
+      return macWebGPUFlags;
+    case "win32":
+      return windowsWebGPUFlags;
+    default:
+      return [
+        "--enable-features=WebGPU",
+        "--enable-unsafe-webgpu",
+        "--ignore-gpu-blocklist",
+      ];
+  }
+}
 
 export default defineConfig({
   use: {
@@ -19,14 +56,12 @@ export default defineConfig({
       name: "chromium",
       use: {
         ...devices["Desktop Chrome"],
-
-        channel: "chrome",  // Use Playwright bundled Chromium
-
+        channel: "chromium",
         launchOptions: {
           headless: true,
           args: [
-            "--headless=new",  // modern headless mode for GPU
-            ...(process.platform === "linux" ? chromiumGpuOnLinuxFlags : []),
+            "--headless=new",
+            ...getPlatformWebGPUFlags(),
           ],
         },
       },
