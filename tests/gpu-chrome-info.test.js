@@ -17,54 +17,189 @@ test.describe('Chrome GPU Information Tests', () => {
       });
       console.log('🔍 Has shadow roots:', hasShadowRoots);
       
-      // Extract content from shadow DOM recursively
+      // Extract content from shadow DOM using proper DOM best practices
       const gpuInfo = await page.evaluate(() => {
-        function getTextFromShadowDOM(element) {
-          let text = '';
+        // Use modern DOM APIs and semantic selectors
+        function getGPUInformation() {
+          const gpuData = {
+            text: '',
+            elements: [],
+            features: new Set(),
+            status: new Map()
+          };
           
-          // Get text from current element
-          if (element.textContent) {
-            text += element.textContent + ' ';
-          }
+          // 1. Use semantic selectors instead of querying all elements
+          const selectors = [
+            '[data-gpu-status]',
+            '[data-feature]',
+            '.gpu-info',
+            '.feature-status',
+            '.hardware-acceleration',
+            '.graphics-backend',
+            'h1, h2, h3, h4, h5, h6', // Headers often contain status info
+            'div[role="status"]',
+            'div[role="main"]',
+            'section',
+            'article'
+          ];
           
-          // Check for shadow root
-          if (element.shadowRoot) {
-            text += getTextFromShadowDOM(element.shadowRoot);
-          }
-          
-          // Check all child nodes
-          for (const child of element.childNodes) {
-            if (child.nodeType === Node.TEXT_NODE) {
-              if (child.textContent.trim()) {
-                text += child.textContent + ' ';
-              }
-            } else if (child.nodeType === Node.ELEMENT_NODE) {
-              text += getTextFromShadowDOM(child);
+          // 2. Try semantic selectors first
+          for (const selector of selectors) {
+            try {
+              const elements = document.querySelectorAll(selector);
+              elements.forEach(element => {
+                if (element.textContent && element.textContent.trim()) {
+                  const text = element.textContent.trim();
+                  if (isGPURelevant(text)) {
+                    gpuData.elements.push({
+                      selector: selector,
+                      text: text,
+                      tagName: element.tagName,
+                      className: element.className,
+                      id: element.id
+                    });
+                    gpuData.text += text + '\n';
+                  }
+                }
+              });
+            } catch (error) {
+              // Silently continue if selector fails
+              continue;
             }
           }
           
-          return text;
+          // 3. Use modern shadow DOM traversal
+          function traverseShadowDOM(root) {
+            const walker = document.createTreeWalker(
+              root,
+              NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
+              {
+                acceptNode: (node) => {
+                  if (node.nodeType === Node.TEXT_NODE) {
+                    return node.textContent.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+                  }
+                  return NodeFilter.FILTER_ACCEPT;
+                }
+              }
+            );
+            
+            const nodes = [];
+            let node;
+            while (node = walker.nextNode()) {
+              nodes.push(node);
+            }
+            
+            return nodes;
+          }
+          
+          // 4. Efficient shadow DOM processing
+          function processShadowDOM(element) {
+            if (!element.shadowRoot) return;
+            
+            const shadowNodes = traverseShadowDOM(element.shadowRoot);
+            shadowNodes.forEach(node => {
+              if (node.nodeType === Node.TEXT_NODE) {
+                const text = node.textContent.trim();
+                if (text && isGPURelevant(text)) {
+                  gpuData.text += text + '\n';
+                  gpuData.elements.push({
+                    selector: 'shadow-root',
+                    text: text,
+                    tagName: 'TEXT',
+                    className: '',
+                    id: ''
+                  });
+                }
+              } else if (node.nodeType === Node.ELEMENT_NODE) {
+                // Process element attributes and content
+                const text = node.textContent.trim();
+                if (text && isGPURelevant(text)) {
+                  gpuData.text += text + '\n';
+                  gpuData.elements.push({
+                    selector: 'shadow-element',
+                    text: text,
+                    tagName: node.tagName,
+                    className: node.className,
+                    id: node.id
+                  });
+                }
+                
+                // Recursively check for nested shadow roots
+                if (node.shadowRoot) {
+                  processShadowDOM(node);
+                }
+              }
+            });
+          }
+          
+          // 5. Smart content filtering function
+          function isGPURelevant(text) {
+            if (!text || text.length < 3) return false;
+            
+            // Skip CSS, JavaScript, and HTML attributes
+            if (text.includes('{') && text.includes('}')) return false;
+            if (text.includes(':host') || text.includes('@media')) return false;
+            if (text.includes('function(') || text.includes('=>')) return false;
+            if (text.includes('=') && text.includes('"')) return false;
+            
+            // Check for GPU-related keywords
+            const gpuKeywords = [
+              'GPU', 'WebGPU', 'WebGL', 'Hardware', 'Software', 'Metal', 'Vulkan',
+              'OpenGL', 'DirectX', 'ANGLE', 'Acceleration', 'Process', 'Canvas',
+              'Rasterization', 'Video', 'Problem', 'Status', 'Feature', 'Extension',
+              'Capability', 'Limit', 'Version', 'Vendor', 'Renderer', 'Enabled',
+              'Disabled', 'Yes', 'No'
+            ];
+            
+            return gpuKeywords.some(keyword => text.includes(keyword));
+          }
+          
+          // 6. Process main document and shadow roots
+          processShadowDOM(document.body);
+          
+          // 7. Use Set and Map for efficient data structures
+          gpuData.elements.forEach(element => {
+            // Extract features
+            if (element.text.includes('WebGPU')) gpuData.features.add('WebGPU');
+            if (element.text.includes('Hardware accelerated')) gpuData.status.set('hardwareAcceleration', true);
+            if (element.text.includes('Metal')) gpuData.status.set('graphicsBackend', 'Metal');
+            if (element.text.includes('Vulkan')) gpuData.status.set('graphicsBackend', 'Vulkan');
+            if (element.text.includes('OpenGL')) gpuData.status.set('graphicsBackend', 'OpenGL');
+            if (element.text.includes('DirectX')) gpuData.status.set('graphicsBackend', 'DirectX');
+            if (element.text.includes('ANGLE')) gpuData.status.set('graphicsBackend', 'ANGLE');
+          });
+          
+          return {
+            text: gpuData.text,
+            elements: Array.from(gpuData.elements),
+            features: Array.from(gpuData.features),
+            status: Object.fromEntries(gpuData.status),
+            elementCount: gpuData.elements.length
+          };
         }
         
-        return getTextFromShadowDOM(document.body);
+        return getGPUInformation();
       });
+      
+      // Use the extracted text for analysis
+      const gpuText = gpuInfo.text;
       
       // Check for key GPU information
       const gpuStatus = {
-        hasWebGPU: gpuInfo.includes('WebGPU'),
-        hasHardwareAcceleration: gpuInfo.includes('Hardware accelerated'),
-        hasANGLE: gpuInfo.includes('ANGLE'),
-        hasMetal: gpuInfo.includes('Metal'),
-        hasVulkan: gpuInfo.includes('Vulkan'),
-        hasOpenGL: gpuInfo.includes('OpenGL'),
-        hasDirectX: gpuInfo.includes('DirectX'),
-        hasSoftwareRendering: gpuInfo.includes('Software only') || gpuInfo.includes('SwiftShader'),
-        hasGPUProcess: gpuInfo.includes('GPU process'),
-        hasRasterization: gpuInfo.includes('Rasterization'),
-        hasCanvas: gpuInfo.includes('Canvas'),
-        hasWebGL: gpuInfo.includes('WebGL'),
-        hasVideoDecode: gpuInfo.includes('Video Decode'),
-        hasVideoEncode: gpuInfo.includes('Video Encode')
+        hasWebGPU: gpuText.includes('WebGPU'),
+        hasHardwareAcceleration: gpuText.includes('Hardware accelerated'),
+        hasANGLE: gpuText.includes('ANGLE'),
+        hasMetal: gpuText.includes('Metal'),
+        hasVulkan: gpuText.includes('Vulkan'),
+        hasOpenGL: gpuText.includes('OpenGL'),
+        hasDirectX: gpuText.includes('DirectX'),
+        hasSoftwareRendering: gpuText.includes('Software only') || gpuText.includes('SwiftShader'),
+        hasGPUProcess: gpuText.includes('GPU process'),
+        hasRasterization: gpuText.includes('Rasterization'),
+        hasCanvas: gpuText.includes('Canvas'),
+        hasWebGL: gpuText.includes('WebGL'),
+        hasVideoDecode: gpuText.includes('Video Decode'),
+        hasVideoEncode: gpuText.includes('Video Encode')
       };
       
       // Take a screenshot for debugging
@@ -72,12 +207,12 @@ test.describe('Chrome GPU Information Tests', () => {
       console.log('📸 Screenshot saved as chrome-gpu-page.png');
       
       // Basic expectations
-      expect(gpuInfo.length).toBeGreaterThan(100);
-      expect(gpuInfo).toMatch(/GPU|Graphics|Hardware|Acceleration/i);
+      expect(gpuText.length).toBeGreaterThan(100);
+      expect(gpuText).toMatch(/GPU|Graphics|Hardware|Acceleration/i);
       
       // Create a clean summary report instead of dumping all data
       const summaryReport = {
-        totalContentLength: gpuInfo.length,
+        totalContentLength: gpuText.length,
         keyFeatures: {
           webgpu: gpuStatus.hasWebGPU ? '✅ Enabled' : '❌ Not Found',
           hardwareAcceleration: gpuStatus.hasHardwareAcceleration ? '✅ Active' : '❌ Inactive',

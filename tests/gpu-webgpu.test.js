@@ -11,112 +11,183 @@ test.describe('WebGPU Tests', () => {
       // Wait for the page to load completely
       await page.waitForTimeout(5000);
       
-      // Extract WebGPU status from the shadow DOM
+      // Extract WebGPU status using proper DOM best practices
       const webgpuStatus = await page.evaluate(() => {
-        function getWebGPUStatus(element) {
-          let status = {
+        // Use modern DOM APIs and semantic selectors
+        function getWebGPUInformation() {
+          const webgpuData = {
             text: '',
-            hasWebGPU: false,
-            webgpuStatus: null,
-            hardwareAccelerated: false,
-            graphicsBackend: null,
-            problems: [],
-            features: []
+            elements: [],
+            features: new Set(),
+            status: new Map()
           };
           
-          // Get text content from current element
-          if (element.textContent) {
-            const text = element.textContent.trim();
-            if (text) {
-              status.text += text + ' ';
-              
-              // Check for WebGPU indicators
-              if (text.includes('WebGPU')) {
-                status.hasWebGPU = true;
-                if (text.includes('Hardware accelerated')) {
-                  status.webgpuStatus = 'Hardware accelerated';
-                } else if (text.includes('Software only')) {
-                  status.webgpuStatus = 'Software only';
-                } else if (text.includes('Disabled')) {
-                  status.webgpuStatus = 'Disabled';
-                } else if (text.includes('Problem')) {
-                  status.webgpuStatus = 'Problem';
+          // 1. Use semantic selectors for WebGPU-specific content
+          const selectors = [
+            '[data-webgpu-status]',
+            '[data-feature="webgpu"]',
+            '.webgpu-info',
+            '.gpu-feature',
+            '.hardware-acceleration',
+            '.graphics-backend',
+            'h1, h2, h3, h4, h5, h6',
+            'div[role="status"]',
+            'section'
+          ];
+          
+          // 2. Try semantic selectors first
+          for (const selector of selectors) {
+            try {
+              const elements = document.querySelectorAll(selector);
+              elements.forEach(element => {
+                if (element.textContent && element.textContent.trim()) {
+                  const text = element.textContent.trim();
+                  if (isWebGPURelevant(text)) {
+                    webgpuData.elements.push({
+                      selector: selector,
+                      text: text,
+                      tagName: element.tagName,
+                      className: element.className,
+                      id: element.id
+                    });
+                    webgpuData.text += text + '\n';
+                  }
+                }
+              });
+            } catch (error) {
+              continue;
+            }
+          }
+          
+          // 3. Use modern shadow DOM traversal
+          function traverseShadowDOM(root) {
+            const walker = document.createTreeWalker(
+              root,
+              NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
+              {
+                acceptNode: (node) => {
+                  if (node.nodeType === Node.TEXT_NODE) {
+                    return node.textContent.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+                  }
+                  return NodeFilter.FILTER_ACCEPT;
                 }
               }
-              
-              // Check for hardware acceleration
-              if (text.includes('Hardware accelerated')) {
-                status.hardwareAccelerated = true;
-              }
-              
-              // Check for graphics backend
-              if (text.includes('Metal')) {
-                status.graphicsBackend = 'Metal';
-              } else if (text.includes('Vulkan')) {
-                status.graphicsBackend = 'Vulkan';
-              } else if (text.includes('OpenGL')) {
-                status.graphicsBackend = 'OpenGL';
-              } else if (text.includes('DirectX')) {
-                status.graphicsBackend = 'DirectX';
-              } else if (text.includes('ANGLE')) {
-                status.graphicsBackend = 'ANGLE';
-              }
-              
-              // Check for problems
-              if (text.includes('Problem') || text.includes('Disabled') || text.includes('Blacklisted')) {
-                status.problems.push(text);
-              }
-              
-              // Check for features
-              if (text.includes('Feature')) {
-                status.features.push(text);
-              }
+            );
+            
+            const nodes = [];
+            let node;
+            while (node = walker.nextNode()) {
+              nodes.push(node);
             }
+            
+            return nodes;
           }
           
-          // Check for shadow root
-          if (element.shadowRoot) {
-            const shadowStatus = getWebGPUStatus(element.shadowRoot);
-            status.text += shadowStatus.text;
-            status.hasWebGPU = status.hasWebGPU || shadowStatus.hasWebGPU;
-            if (!status.webgpuStatus && shadowStatus.webgpuStatus) {
-              status.webgpuStatus = shadowStatus.webgpuStatus;
-            }
-            status.hardwareAccelerated = status.hardwareAccelerated || shadowStatus.hardwareAccelerated;
-            if (!status.graphicsBackend && shadowStatus.graphicsBackend) {
-              status.graphicsBackend = shadowStatus.graphicsBackend;
-            }
-            status.problems.push(...shadowStatus.problems);
-            status.features.push(...shadowStatus.features);
+          // 4. Efficient shadow DOM processing
+          function processShadowDOM(element) {
+            if (!element.shadowRoot) return;
+            
+            const shadowNodes = traverseShadowDOM(element.shadowRoot);
+            shadowNodes.forEach(node => {
+              if (node.nodeType === Node.TEXT_NODE) {
+                const text = node.textContent.trim();
+                if (text && isWebGPURelevant(text)) {
+                  webgpuData.text += text + '\n';
+                  webgpuData.elements.push({
+                    selector: 'shadow-root',
+                    text: text,
+                    tagName: 'TEXT',
+                    className: '',
+                    id: ''
+                  });
+                }
+              } else if (node.nodeType === Node.ELEMENT_NODE) {
+                const text = node.textContent.trim();
+                if (text && isWebGPURelevant(text)) {
+                  webgpuData.text += text + '\n';
+                  webgpuData.elements.push({
+                    selector: 'shadow-element',
+                    text: text,
+                    tagName: node.tagName,
+                    className: node.className,
+                    id: node.id
+                  });
+                }
+                
+                if (node.shadowRoot) {
+                  processShadowDOM(node);
+                }
+              }
+            });
           }
           
-          // Check all child nodes
-          for (const child of element.childNodes) {
-            if (child.nodeType === Node.TEXT_NODE) {
-              const text = child.textContent.trim();
-              if (text) {
-                status.text += text + ' ';
-              }
-            } else if (child.nodeType === Node.ELEMENT_NODE) {
-              const childStatus = getWebGPUStatus(child);
-              status.text += childStatus.text;
-              status.hasWebGPU = status.hasWebGPU || childStatus.hasWebGPU;
-              if (!status.webgpuStatus && childStatus.webgpuStatus) {
-                status.webgpuStatus = childStatus.webgpuStatus;
-              }
-              status.hardwareAccelerated = status.hardwareAccelerated || childStatus.hardwareAccelerated;
-              if (!status.graphicsBackend && childStatus.graphicsBackend) {
-                status.graphicsBackend = childStatus.graphicsBackend;
-              }
-              status.problems.push(...childStatus.problems);
-              status.features.push(...childStatus.features);
-            }
+          // 5. Smart content filtering function
+          function isWebGPURelevant(text) {
+            if (!text || text.length < 3) return false;
+            
+            // Skip CSS, JavaScript, and HTML attributes
+            if (text.includes('{') && text.includes('}')) return false;
+            if (text.includes(':host') || text.includes('@media')) return false;
+            if (text.includes('function(') || text.includes('=>')) return false;
+            if (text.includes('=') && text.includes('"')) return false;
+            
+            // Check for WebGPU-related keywords
+            const webgpuKeywords = [
+              'WebGPU', 'GPU', 'Hardware', 'Software', 'Metal', 'Vulkan',
+              'OpenGL', 'DirectX', 'ANGLE', 'Acceleration', 'Problem', 'Feature',
+              'Enabled', 'Disabled', 'Yes', 'No'
+            ];
+            
+            return webgpuKeywords.some(keyword => text.includes(keyword));
           }
           
-          return status;
+          // 6. Process main document and shadow roots
+          processShadowDOM(document.body);
+          
+          // 7. Use Set and Map for efficient data structures
+          webgpuData.elements.forEach(element => {
+            if (element.text.includes('WebGPU')) {
+              webgpuData.features.add('WebGPU');
+              if (element.text.includes('Hardware accelerated') || element.text.includes('Yes')) {
+                webgpuData.status.set('webgpuStatus', 'Hardware accelerated');
+              } else if (element.text.includes('Software only') || element.text.includes('No')) {
+                webgpuData.status.set('webgpuStatus', 'Software only');
+              } else if (element.text.includes('Disabled')) {
+                webgpuData.status.set('webgpuStatus', 'Disabled');
+              } else if (element.text.includes('Problem')) {
+                webgpuData.status.set('webgpuStatus', 'Problem');
+              }
+            }
+            
+            if (element.text.includes('Hardware accelerated')) {
+              webgpuData.status.set('hardwareAccelerated', true);
+            }
+            
+            if (element.text.includes('Metal')) webgpuData.status.set('graphicsBackend', 'Metal');
+            else if (element.text.includes('Vulkan')) webgpuData.status.set('graphicsBackend', 'Vulkan');
+            else if (element.text.includes('OpenGL')) webgpuData.status.set('graphicsBackend', 'OpenGL');
+            else if (element.text.includes('DirectX')) webgpuData.status.set('graphicsBackend', 'DirectX');
+            else if (element.text.includes('ANGLE')) webgpuData.status.set('graphicsBackend', 'ANGLE');
+            
+            if (element.text.includes('Problem') || element.text.includes('Disabled') || element.text.includes('Blacklisted')) {
+              webgpuData.status.set('problems', (webgpuData.status.get('problems') || 0) + 1);
+            }
+            
+            if (element.text.includes('Feature')) {
+              webgpuData.features.add('Feature');
+            }
+          });
+          
+          return {
+            text: webgpuData.text,
+            elements: Array.from(webgpuData.elements),
+            features: Array.from(webgpuData.features),
+            status: Object.fromEntries(webgpuData.status),
+            elementCount: webgpuData.elements.length
+          };
         }
         
-        return getWebGPUStatus(document.body);
+        return getWebGPUInformation();
       });
       
       // Take a screenshot for debugging
