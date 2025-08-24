@@ -13,11 +13,13 @@ const linuxWebGPUFlags = [
 // macOS-specific WebGPU flags
 const macWebGPUFlags = [
   "--use-angle=metal",                    // Use Metal backend on macOS
-  "--enable-features=WebGPU",             // Enable WebGPU (no Vulkan on macOS)
+  "--enable-features=WebGPU,WebGPUDeveloperFeatures", // Enable WebGPU with developer features
   "--enable-unsafe-webgpu",               // Allow experimental WebGPU
   "--ignore-gpu-blocklist",               // Ignore GPU blacklist
   "--disable-gpu-driver-bug-workarounds", // Prevent software fallback
   "--enable-gpu",                         // Ensure GPU acceleration
+  "--no-sandbox",                         // Disable sandbox for testing
+  "--disable-dev-shm-usage",             // Disable shared memory usage
 ];
 
 // Windows-specific WebGPU flags (if needed)
@@ -56,12 +58,14 @@ export default defineConfig({
       name: "chromium",
       use: {
         ...devices["Desktop Chrome"],
-        channel: "chromium",
+        channel: "chrome",
+        executablePath: process.platform === "darwin" ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" : undefined,
         launchOptions: {
-          headless: true,
           args: [
-            "--headless=new",
             ...getPlatformWebGPUFlags(),
+            "--enable-webgpu",
+            "--enable-webgpu-developer-features",
+            "--enable-unsafe-webgpu-developer-features",
           ],
         },
       },

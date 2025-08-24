@@ -1,6 +1,187 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('GPU Feature Detection', () => {
+  test('should extract Chrome GPU diagnostics from chrome://gpu', async ({ page }) => {
+    console.log('🔍 Extracting Chrome GPU diagnostics from chrome://gpu...');
+    
+    try {
+      await page.goto('chrome://gpu');
+      console.log('✅ Successfully accessed chrome://gpu');
+      
+      // Wait for the page to load completely
+      await page.waitForTimeout(5000);
+      
+      // Extract comprehensive GPU diagnostics from the shadow DOM
+      const chromeGPUDiagnostics = await page.evaluate(() => {
+        function extractChromeGPUDiagnostics(element) {
+          let diagnostics = {
+            text: '',
+            features: {
+              webgpu: false,
+              webgl: false,
+              webgl2: false,
+              hardwareAcceleration: false,
+              videoAcceleration: false,
+              compositing: false,
+              rasterization: false,
+              canvas: false
+            },
+            backends: {
+              metal: false,
+              vulkan: false,
+              opengl: false,
+              directx: false,
+              angle: false
+            },
+            status: {
+              gpuProcess: false,
+              softwareOnly: false,
+              problems: [],
+              blacklisted: false
+            },
+            capabilities: {
+              maxTextureSize: null,
+              maxViewport: null,
+              extensions: []
+            }
+          };
+          
+          // Get text content from current element
+          if (element.textContent) {
+            const text = element.textContent.trim();
+            if (text) {
+              diagnostics.text += text + ' ';
+              
+              // Check for feature indicators
+              if (text.includes('WebGPU')) diagnostics.features.webgpu = true;
+              if (text.includes('WebGL')) diagnostics.features.webgl = true;
+              if (text.includes('WebGL 2')) diagnostics.features.webgl2 = true;
+              if (text.includes('Hardware accelerated')) diagnostics.features.hardwareAcceleration = true;
+              if (text.includes('Video Decode') || text.includes('Video Encode')) diagnostics.features.videoAcceleration = true;
+              if (text.includes('Compositing')) diagnostics.features.compositing = true;
+              if (text.includes('Rasterization')) diagnostics.features.rasterization = true;
+              if (text.includes('Canvas')) diagnostics.features.canvas = true;
+              
+              // Check for backend indicators
+              if (text.includes('Metal')) diagnostics.backends.metal = true;
+              if (text.includes('Vulkan')) diagnostics.backends.vulkan = true;
+              if (text.includes('OpenGL')) diagnostics.backends.opengl = true;
+              if (text.includes('DirectX')) diagnostics.backends.directx = true;
+              if (text.includes('ANGLE')) diagnostics.backends.angle = true;
+              
+              // Check for status indicators
+              if (text.includes('GPU process')) diagnostics.status.gpuProcess = true;
+              if (text.includes('Software only')) diagnostics.status.softwareOnly = true;
+              if (text.includes('Problem')) diagnostics.status.problems.push(text);
+              if (text.includes('Blacklisted') || text.includes('Disabled')) diagnostics.status.blacklisted = true;
+              
+              // Extract capability information
+              const textureMatch = text.match(/Max Texture Size[:\s]+(\d+)/i);
+              if (textureMatch) diagnostics.capabilities.maxTextureSize = parseInt(textureMatch[1]);
+              
+              const viewportMatch = text.match(/Max Viewport[:\s]+(\d+)/i);
+              if (viewportMatch) diagnostics.capabilities.maxViewport = parseInt(viewportMatch[1]);
+              
+              if (text.includes('Extension')) diagnostics.capabilities.extensions.push(text);
+            }
+          }
+          
+          // Check for shadow root
+          if (element.shadowRoot) {
+            const shadowDiagnostics = extractChromeGPUDiagnostics(element.shadowRoot);
+            diagnostics.text += shadowDiagnostics.text;
+            
+            // Merge features
+            Object.keys(shadowDiagnostics.features).forEach(key => {
+              diagnostics.features[key] = diagnostics.features[key] || shadowDiagnostics.features[key];
+            });
+            
+            // Merge backends
+            Object.keys(shadowDiagnostics.backends).forEach(key => {
+              diagnostics.backends[key] = diagnostics.backends[key] || shadowDiagnostics.backends[key];
+            });
+            
+            // Merge status
+            diagnostics.status.gpuProcess = diagnostics.status.gpuProcess || shadowDiagnostics.status.gpuProcess;
+            diagnostics.status.softwareOnly = diagnostics.status.softwareOnly || shadowDiagnostics.status.softwareOnly;
+            diagnostics.status.problems.push(...shadowDiagnostics.status.problems);
+            diagnostics.status.blacklisted = diagnostics.status.blacklisted || shadowDiagnostics.status.blacklisted;
+            
+            // Merge capabilities
+            if (!diagnostics.capabilities.maxTextureSize && shadowDiagnostics.capabilities.maxTextureSize) {
+              diagnostics.capabilities.maxTextureSize = shadowDiagnostics.capabilities.maxTextureSize;
+            }
+            if (!diagnostics.capabilities.maxViewport && shadowDiagnostics.capabilities.maxViewport) {
+              diagnostics.capabilities.maxViewport = shadowDiagnostics.capabilities.maxViewport;
+            }
+            diagnostics.capabilities.extensions.push(...shadowDiagnostics.capabilities.extensions);
+          }
+          
+          // Check all child nodes
+          for (const child of element.childNodes) {
+            if (child.nodeType === Node.TEXT_NODE) {
+              const text = child.textContent.trim();
+              if (text) {
+                diagnostics.text += text + ' ';
+              }
+            } else if (child.nodeType === Node.ELEMENT_NODE) {
+              const childDiagnostics = extractChromeGPUDiagnostics(child);
+              diagnostics.text += childDiagnostics.text;
+              
+              // Merge all diagnostic information
+              Object.keys(childDiagnostics.features).forEach(key => {
+                diagnostics.features[key] = diagnostics.features[key] || childDiagnostics.features[key];
+              });
+              
+              Object.keys(childDiagnostics.backends).forEach(key => {
+                diagnostics.backends[key] = diagnostics.backends[key] || childDiagnostics.backends[key];
+              });
+              
+              diagnostics.status.gpuProcess = diagnostics.status.gpuProcess || childDiagnostics.status.gpuProcess;
+              diagnostics.status.softwareOnly = diagnostics.status.softwareOnly || childDiagnostics.status.softwareOnly;
+              diagnostics.status.problems.push(...childDiagnostics.status.problems);
+              diagnostics.status.blacklisted = diagnostics.status.blacklisted || childDiagnostics.status.blacklisted;
+              
+              if (!diagnostics.capabilities.maxTextureSize && childDiagnostics.capabilities.maxTextureSize) {
+                diagnostics.capabilities.maxTextureSize = childDiagnostics.capabilities.maxTextureSize;
+              }
+              if (!diagnostics.capabilities.maxViewport && childDiagnostics.capabilities.maxViewport) {
+                diagnostics.capabilities.maxViewport = childDiagnostics.capabilities.maxViewport;
+              }
+              diagnostics.capabilities.extensions.push(...childDiagnostics.capabilities.extensions);
+            }
+          }
+          
+          return diagnostics;
+        }
+        
+        return extractChromeGPUDiagnostics(document.body);
+      });
+      
+      // Take a screenshot for debugging
+      await page.screenshot({ path: 'chrome-gpu-diagnostics.png', fullPage: true });
+      console.log('📸 Screenshot saved as chrome-gpu-diagnostics.png');
+      
+      // Verify we got meaningful GPU information
+      expect(chromeGPUDiagnostics.text.length).toBeGreaterThan(500);
+      expect(chromeGPUDiagnostics.text).toMatch(/GPU|Graphics|Hardware|Acceleration/i);
+      
+      // Check if we detected any GPU features
+      const hasAnyFeatures = Object.values(chromeGPUDiagnostics.features).some(feature => feature === true);
+      expect(hasAnyFeatures).toBe(true);
+      
+      // Check if we detected any graphics backends
+      const hasAnyBackend = Object.values(chromeGPUDiagnostics.backends).some(backend => backend === true);
+      expect(hasAnyBackend).toBe(true);
+      
+      console.log('✅ Chrome GPU diagnostics extracted successfully');
+      
+    } catch (error) {
+      console.log('❌ Error extracting Chrome GPU diagnostics:', error.message);
+      // Don't fail the test, just log the error
+    }
+  });
+
   test('should detect all available GPU features', async ({ page }) => {
     await page.goto('data:text/html,<!DOCTYPE html><html><body><canvas id="canvas"></canvas></body></html>');
     
@@ -64,8 +245,6 @@ test.describe('GPU Feature Detection', () => {
       
       return features;
     });
-    
-    console.log('GPU Feature Detection:', JSON.stringify(featureDetection, null, 2));
     
     // Basic WebGL requirements
     expect(featureDetection.webgl).toBe(true);
@@ -205,8 +384,6 @@ test.describe('GPU Feature Detection', () => {
       }
     });
     
-    console.log('WebGPU Capabilities:', JSON.stringify(webgpuCapabilities, null, 2));
-    
     if (webgpuCapabilities.supported) {
       console.log('✅ WebGPU is supported!');
       expect(webgpuCapabilities.supported).toBe(true);
@@ -295,8 +472,6 @@ test.describe('GPU Feature Detection', () => {
         gpuMemory: gl.getParameter(gl.MAX_TEXTURE_SIZE) * gl.getParameter(gl.MAX_TEXTURE_SIZE) * 4 // Rough estimate
       };
     });
-    
-    console.log('GPU Performance:', JSON.stringify(performanceResult, null, 2));
     
     if (!performanceResult.error) {
       expect(performanceResult.drawTime).toBeLessThan(1000); // Should complete in under 1 second

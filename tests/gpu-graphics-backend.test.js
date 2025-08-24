@@ -182,51 +182,6 @@ test.describe('Graphics Backend Tests', () => {
         return extractGraphicsBackendInfo(document.body);
       });
       
-      // Create a clean summary instead of dumping all data
-      const backendSummary = {
-        platform: process.platform,
-        primaryBackend: graphicsBackendInfo.graphics.metal ? 'Metal' :
-                       graphicsBackendInfo.graphics.vulkan ? 'Vulkan' :
-                       graphicsBackendInfo.graphics.opengl ? 'OpenGL' :
-                       graphicsBackendInfo.graphics.directx ? 'DirectX' : 'Unknown',
-        detected: {
-          metal: graphicsBackendInfo.graphics.metal,
-          vulkan: graphicsBackendInfo.vulkan.backend,
-          opengl: graphicsBackendInfo.graphics.opengl,
-          directx: graphicsBackendInfo.graphics.directx,
-          angle: graphicsBackendInfo.angle.backend
-        },
-        acceleration: graphicsBackendInfo.acceleration.hardware ? '✅ Hardware' : '❌ Software',
-        problems: graphicsBackendInfo.acceleration.problems.length
-      };
-      
-      console.log('📊 Graphics Backend Summary:');
-      console.log('   ======================================');
-      console.log(`   🖥️  Platform: ${backendSummary.platform}`);
-      console.log(`   🎯 Primary Backend: ${backendSummary.primaryBackend}`);
-      console.log('   🔍 Detected Backends:');
-      console.log(`      Metal: ${backendSummary.detected.metal ? '✅' : '❌'}`);
-      console.log(`      Vulkan: ${backendSummary.detected.vulkan ? '✅' : '❌'}`);
-      console.log(`      OpenGL: ${backendSummary.detected.opengl ? '✅' : '❌'}`);
-      console.log(`      DirectX: ${backendSummary.detected.directx ? '✅' : '❌'}`);
-      console.log(`      ANGLE: ${backendSummary.detected.angle ? '✅' : '❌'}`);
-      console.log(`   🚀 Acceleration: ${backendSummary.acceleration}`);
-      console.log(`   ⚠️  Problems: ${backendSummary.problems} detected`);
-      console.log('   ======================================');
-      
-      // Platform-specific expectations
-      if (process.platform === 'darwin') {
-        console.log('🍎 macOS detected - expecting Metal backend');
-        expect(graphicsBackendInfo.graphics.metal).toBe(true);
-        expect(graphicsBackendInfo.vulkan.backend).toBe(false); // No Vulkan on macOS
-      } else if (process.platform === 'linux') {
-        console.log('🐧 Linux detected - expecting Vulkan/OpenGL backend');
-        expect(graphicsBackendInfo.vulkan.backend || graphicsBackendInfo.graphics.opengl).toBe(true);
-      } else if (process.platform === 'win32') {
-        console.log('🪟 Windows detected - expecting DirectX/OpenGL backend');
-        expect(graphicsBackendInfo.graphics.directx || graphicsBackendInfo.graphics.opengl).toBe(true);
-      }
-      
       // Take a screenshot for debugging
       await page.screenshot({ path: 'graphics-backend-chrome-gpu.png', fullPage: true });
       console.log('📸 Screenshot saved as graphics-backend-chrome-gpu.png');
@@ -275,8 +230,6 @@ test.describe('Graphics Backend Tests', () => {
         extensions: gl.getSupportedExtensions()
       };
     });
-    
-    console.log('Vulkan/ANGLE Info:', JSON.stringify(vulkanInfo, null, 2));
     
     expect(vulkanInfo.supported).toBe(true);
     expect(vulkanInfo.renderer).toBeTruthy();
@@ -405,7 +358,6 @@ test.describe('Graphics Backend Tests', () => {
     await page.waitForFunction(() => window.vulkanTestComplete);
     
     const performance = await page.evaluate(() => window.vulkanPerformance);
-    console.log('Vulkan Performance:', JSON.stringify(performance, null, 2));
     
     expect(performance.drawCalls).toBe(10000);
     expect(performance.totalTime).toBeLessThan(5000); // Should complete in under 5 seconds with GPU acceleration

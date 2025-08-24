@@ -1,15 +1,23 @@
 {
-  "name": "test",
+  "name": "gpu-feature-detection",
   "version": "1.0.0",
-  "description": "",
+  "description": "GPU feature detection and testing suite using Playwright",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:ui": "playwright test --ui",
+    "install-browsers": "playwright install chromium",
+    "report": "playwright show-report"
   },
-  "keywords": [],
+  "keywords": ["gpu", "webgl", "webgpu", "vulkan", "testing", "playwright"],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@playwright/test": "1.55"
+  },
+  "devDependencies": {
     "@playwright/test": "1.55"
   }
 }
