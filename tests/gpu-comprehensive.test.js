@@ -267,94 +267,207 @@ test.describe('Comprehensive GPU Testing Suite', () => {
     console.log('✅ All GPU information extracted successfully!');
   });
   
-  test('should perform WebGPU functionality test', async ({ page }) => {
-    console.log('🚀 Testing WebGPU functionality...');
+  test('should test WebGPU rendering functionality', async ({ page }) => {
+    console.log('🚀 Testing WebGPU rendering functionality...');
     
-    // Navigate to a simple HTML page for WebGPU testing
-    await page.goto('data:text/html,<!DOCTYPE html><html><body><canvas id="canvas"></canvas></body></html>');
-    await page.waitForLoadState('domcontentloaded');
-    
-    // Wait for canvas to be available
-    await page.locator('#canvas').waitFor();
-    
-    // Test WebGPU availability
-    const webgpuAvailable = await page.evaluate(() => {
-      return typeof navigator.gpu !== 'undefined';
-    });
-    
-    console.log(`🔍 WebGPU Available: ${webgpuAvailable ? '✅ Yes' : '❌ No'}`);
-    
-    if (webgpuAvailable) {
-      // Test WebGPU adapter
-      const adapterInfo = await page.evaluate(async () => {
-        try {
-          const adapter = await navigator.gpu.requestAdapter();
-          if (adapter) {
-            const info = await adapter.requestAdapterInfo();
-            return {
-              name: info.name,
-              vendor: info.vendor,
-              device: info.device,
-              description: info.description
-            };
-          }
-          return null;
-        } catch (error) {
-          return { error: error.message };
+    try {
+      // Navigate to a real WebGPU application
+      console.log('🌐 Navigating to WebGPU water example...');
+      await page.goto('https://wgpu.rs/examples/?backend=webgpu&example=water');
+      
+      // Wait for the page to load and rendering to start
+      await page.waitForLoadState('networkidle');
+      
+      // Wait for the canvas to be available and visible
+      const canvas = page.locator('canvas');
+      await canvas.waitFor({ state: 'visible', timeout: 15000 });
+      
+      console.log('✅ Canvas is visible, waiting for rendering to start...');
+      
+      // Small delay to let rendering start and stabilize
+      await page.waitForTimeout(3000);
+      
+      // Check if WebGPU is actually working by examining the canvas
+      const canvasInfo = await page.evaluate(() => {
+        const canvas = document.querySelector('canvas');
+        if (!canvas) return { exists: false };
+        
+        return {
+          exists: true,
+          width: canvas.width,
+          height: canvas.height,
+          hasWebGPUContext: !!canvas.getContext('webgpu')
+        };
+      });
+      
+      console.log('🎨 **Canvas Information:**');
+      console.log(`   Exists: ${canvasInfo.exists ? '✅ Yes' : '❌ No'}`);
+      console.log(`   Dimensions: ${canvasInfo.width} x ${canvasInfo.height}`);
+      console.log(`   WebGPU Context: ${canvasInfo.hasWebGPUContext ? '✅ Available' : '❌ Not Available'}`);
+      
+      // Test WebGL and 2D contexts on separate canvas elements (not the one used by WebGPU)
+      const contextAvailability = await page.evaluate(() => {
+        // Create separate test canvases
+        const webglCanvas = document.createElement('canvas');
+        const canvas2d = document.createElement('canvas');
+        
+        // Set reasonable dimensions
+        webglCanvas.width = 100;
+        webglCanvas.height = 100;
+        canvas2d.width = 100;
+        canvas2d.height = 100;
+        
+        return {
+          hasWebGL: !!webglCanvas.getContext('webgl'),
+          has2D: !!canvas2d.getContext('2d'),
+          webglVendor: null,
+          webglRenderer: null
+        };
+      });
+      
+      // Get WebGL details if available
+      if (contextAvailability.hasWebGL) {
+        const webglDetails = await page.evaluate(() => {
+          const testCanvas = document.createElement('canvas');
+          testCanvas.width = 100;
+          testCanvas.height = 100;
+          const gl = testCanvas.getContext('webgl');
+          
+          if (!gl) return null;
+          
+          const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+          
+          return {
+            vendor: gl.getParameter(gl.VENDOR),
+            renderer: gl.getParameter(gl.RENDERER),
+            version: gl.getParameter(gl.VERSION),
+            maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE),
+            extensions: gl.getSupportedExtensions().length
+          };
+        });
+        
+        if (webglDetails) {
+          contextAvailability.webglVendor = webglDetails.vendor;
+          contextAvailability.webglRenderer = webglDetails.renderer;
+        }
+      }
+      
+      console.log('🔧 **Context Availability (Separate Test):**');
+      console.log(`   WebGL Context: ${contextAvailability.hasWebGL ? '✅ Available' : '❌ Not Available'}`);
+      console.log(`   2D Context: ${contextAvailability.has2D ? '✅ Available' : '❌ Not Available'}`);
+      
+      if (contextAvailability.hasWebGL && contextAvailability.webglVendor) {
+        console.log('🎨 **WebGL Details:**');
+        console.log(`   Vendor: ${contextAvailability.webglVendor}`);
+        console.log(`   Renderer: ${contextAvailability.webglRenderer}`);
+      }
+      
+      // Take screenshot of the canvas
+      console.log('📸 Taking canvas screenshot...');
+      const canvasScreenshot = await canvas.screenshot();
+      
+      // Check if the screenshot has meaningful content (not just blank/white)
+      const screenshotSize = canvasScreenshot.length;
+      console.log(`📊 Screenshot size: ${screenshotSize} bytes`);
+      
+      // Basic validation: screenshot should be substantial
+      expect(screenshotSize).toBeGreaterThan(1000);
+      console.log('✅ Screenshot size validation passed');
+      
+      // Check if the canvas is actually rendering (not just a static image)
+      // Wait a bit more and take another screenshot to see if it's animated
+      await page.waitForTimeout(2000);
+      const secondScreenshot = await canvas.screenshot();
+      
+      // Compare screenshots to see if there's animation/rendering happening
+      const screenshotsIdentical = Buffer.compare(canvasScreenshot, secondScreenshot) === 0;
+      console.log(`🔄 Screenshots identical: ${screenshotsIdentical ? '❌ Static (no rendering)' : '✅ Dynamic (rendering detected)'}`);
+      
+      // If screenshots are identical, the canvas might not be actively rendering
+      if (screenshotsIdentical) {
+        console.log('⚠️  Canvas appears to be static - WebGPU might not be actively rendering');
+      } else {
+        console.log('✅ Canvas is actively rendering - WebGPU is working!');
+      }
+      
+      // Check for any WebGPU-related errors in the console
+      const consoleErrors = [];
+      page.on('console', msg => {
+        if (msg.type() === 'error') {
+          consoleErrors.push(msg.text());
         }
       });
       
-      if (adapterInfo && !adapterInfo.error) {
-        console.log('🎯 **WebGPU Adapter Info:**');
-        console.log(`   Name: ${adapterInfo.name}`);
-        console.log(`   Vendor: ${adapterInfo.vendor}`);
-        console.log(`   Device: ${adapterInfo.device}`);
-        console.log(`   Description: ${adapterInfo.description}`);
-        
-        // Proper Playwright assertion
-        expect(adapterInfo.name).toBeTruthy();
+      // Wait a bit more to catch any delayed errors
+      await page.waitForTimeout(2000);
+      
+      if (consoleErrors.length > 0) {
+        console.log('⚠️  **Console Errors Detected:**');
+        consoleErrors.forEach(error => {
+          if (error.includes('WebGPU') || error.includes('wgpu') || error.includes('GPU')) {
+            console.log(`   🚨 ${error}`);
+          }
+        });
       } else {
-        console.log('⚠️  Could not get WebGPU adapter info:', adapterInfo?.error || 'Unknown error');
+        console.log('✅ No WebGPU-related console errors detected');
       }
+      
+      // Check if the page shows WebGPU backend information
+      const backendInfo = await page.evaluate(() => {
+        // Look for any text indicating WebGPU backend
+        const bodyText = document.body.textContent || '';
+        const webgpuIndicators = [
+          bodyText.includes('WebGPU'),
+          bodyText.includes('wgpu'),
+          bodyText.includes('Dawn'),
+          bodyText.includes('GPU')
+        ];
+        
+        return {
+          hasWebGPUText: webgpuIndicators.some(Boolean),
+          indicators: webgpuIndicators
+        };
+      });
+      
+      console.log('🔍 **Page Content Analysis:**');
+      console.log(`   WebGPU-related text found: ${backendInfo.hasWebGPUText ? '✅ Yes' : '❌ No'}`);
+      
+      // Final WebGPU availability assessment
+      const webgpuWorking = canvasInfo.hasWebGPUContext && !screenshotsIdentical && screenshotSize > 1000;
+      
+      console.log('\n🎯 **WebGPU Rendering Assessment:**');
+      console.log('=====================================');
+      console.log(`🚀 WebGPU Context: ${canvasInfo.hasWebGPUContext ? '✅ Available' : '❌ Not Available'}`);
+      console.log(`🎨 Active Rendering: ${!screenshotsIdentical ? '✅ Detected' : '❌ Not Detected'}`);
+      console.log(`📊 Content Quality: ${screenshotSize > 1000 ? '✅ Good' : '❌ Poor'}`);
+      console.log(`🔍 Overall Status: ${webgpuWorking ? '✅ WebGPU is Working!' : '❌ WebGPU Not Working'}`);
+      
+      // Expectations
+      expect(canvasInfo.exists).toBe(true);
+      expect(canvasInfo.width).toBeGreaterThan(0);
+      expect(canvasInfo.height).toBeGreaterThan(0);
+      expect(screenshotSize).toBeGreaterThan(1000);
+      
+      // If WebGPU context is available, it should be working
+      if (canvasInfo.hasWebGPUContext) {
+        expect(webgpuWorking).toBe(true);
+      }
+      
+      console.log('✅ WebGPU rendering test completed!');
+      
+    } catch (error) {
+      console.log('❌ Error testing WebGPU rendering:', error.message);
+      
+      // Take a screenshot of the failed state for debugging
+      try {
+        await page.screenshot({ path: 'webgpu-test-failure.png', fullPage: true });
+        console.log('📸 Failure screenshot saved as webgpu-test-failure.png');
+      } catch (screenshotError) {
+        console.log('⚠️  Could not save failure screenshot:', screenshotError.message);
+      }
+      
+      throw error;
     }
-    
-    // Test WebGL as fallback
-    const webglInfo = await page.evaluate(() => {
-      const canvas = document.getElementById('canvas');
-      const gl = canvas.getContext('webgl');
-      
-      if (!gl) return { webgl: false };
-      
-      const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-      
-      return {
-        webgl: true,
-        vendor: gl.getParameter(gl.VENDOR),
-        renderer: gl.getParameter(gl.RENDERER),
-        version: gl.getParameter(gl.VERSION),
-        unmaskedVendor: debugInfo ? gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) : null,
-        unmaskedRenderer: debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : null,
-        maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE),
-        extensions: gl.getSupportedExtensions().length
-      };
-    });
-    
-    if (webglInfo.webgl) {
-      console.log('🎨 **WebGL Info:**');
-      console.log(`   Vendor: ${webglInfo.vendor}`);
-      console.log(`   Renderer: ${webglInfo.renderer}`);
-      console.log(`   Version: ${webglInfo.version}`);
-      console.log(`   Max Texture Size: ${webglInfo.maxTextureSize}`);
-      console.log(`   Extensions: ${webglInfo.extensions}`);
-    }
-    
-    // Proper Playwright expectations
-    expect(webglInfo.webgl).toBe(true);
-    expect(webglInfo.vendor).toBeTruthy();
-    expect(webglInfo.renderer).toBeTruthy();
-    expect(webglInfo.maxTextureSize).toBeGreaterThan(0);
-    
-    console.log('✅ WebGPU functionality test completed!');
   });
   
   test('should verify GPU acceleration and performance', async ({ page }) => {
